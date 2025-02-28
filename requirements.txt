@@ -5,3 +5,4 @@ statmodels
 matplotlib
 bcrypt
 requests
+pmdarima

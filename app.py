@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 # Configuración inicial de Airtable
-AIRTABLE_API_KEY = "tu_personal_access_token"  # Reemplaza con tu Personal Access Token (PAT)
-AIRTABLE_BASE_ID = "tu_base_id"  # Reemplaza con tu Base ID
+AIRTABLE_API_KEY = st.secrets["airtable_api_key"]  # Reemplaza con tu Personal Access Token (PAT)
+AIRTABLE_BASE_ID = st.secrets["airtable_base_id"]  # Reemplaza con tu Base ID
 AIRTABLE_TABLE_NAME = "Inventory"  # Nombre de la tabla en Airtable
 AIRTABLE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}"
 

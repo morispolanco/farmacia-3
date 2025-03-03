@@ -1,8 +1,8 @@
 streamlit
 pandas
 numpy
+pmdarima
 matplotlib
 bcrypt
-requests
-pmdarima
-cython
+plotly
+reportlab

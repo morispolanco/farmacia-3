@@ -1,8 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from pmdarima import auto_arima
-import matplotlib.pyplot as plt
 import sqlite3
 import os
 from datetime import datetime
@@ -189,28 +186,6 @@ def add_sale(fecha, producto, ventas, stock_inicial, fecha_vencimiento, is_resto
     conn.close()
     return True
 
-def preprocess_data(df):
-    return {product: group for product, group in df.groupby('Producto')}
-
-def forecast_demand(data, product, days=30):
-    sales = data[product]['Ventas'].values
-    if len(sales) < 30:
-        return None, None, f"Se recomiendan al menos 30 días de datos históricos para un pronóstico fiable (disponibles: {len(sales)})."
-    try:
-        model = auto_arima(sales, seasonal=False, suppress_warnings=True, stepwise=True)
-        forecast = model.predict(n_periods=days, return_conf_int=True)
-        predictions, conf_int = forecast[0], forecast[1]
-        return predictions, conf_int, None
-    except Exception as e:
-        return None, None, f"Error en el modelo de pronóstico: {e}"
-
-def suggest_restock(current_stock, predicted_demand, threshold, buffer=1.2):
-    predicted_stock = current_stock - predicted_demand
-    if predicted_stock < threshold:
-        restock_amount = (predicted_demand * buffer) - current_stock
-        return max(restock_amount, 0)
-    return 0
-
 # Inicializar la base de datos
 init_db()
 
@@ -225,6 +200,7 @@ if not st.session_state.logged_in:
     if st.sidebar.button("Login"):
         if check_login(username, password):
             st.session_state.logged_in = True
+            st.session_state.username = username  # Guardar el nombre de usuario
             st.sidebar.success("¡Inicio de sesión exitoso!")
         else:
             st.sidebar.error("Usuario o contraseña incorrectos")
@@ -238,9 +214,9 @@ else:
     menu = st.sidebar.selectbox(
         "Menú",
         ["Ver Inventario", "Registrar Ventas", "Cargar CSV", "Agregar Producto", "Buscar Producto", 
-         "Editar Producto", "Eliminar Producto", "Reporte", "Historial", "Análisis de Demanda"]
+         "Editar Producto", "Eliminar Producto", "Reporte", "Historial", "Análisis de Stock"]
     )
-    st.sidebar.write(f"Usuario: {st.session_state.username if 'username' in st.session_state else 'admin'}")
+    st.sidebar.write(f"Usuario: {st.session_state.username}")
 
     if st.sidebar.button("Cerrar Sesión"):
         st.session_state.logged_in = False
@@ -248,10 +224,9 @@ else:
         st.sidebar.success("Sesión cerrada")
         st.experimental_rerun()
 
-    # Configuraciones para análisis de demanda
-    if menu == "Análisis de Demanda":
+    # Configuraciones para análisis de stock
+    if menu == "Análisis de Stock":
         st.sidebar.header("Configuración de Análisis")
-        forecast_days = st.sidebar.slider("Días de Pronóstico", 7, 90, 30)
         stock_threshold = st.sidebar.number_input("Umbral de Stock Mínimo", min_value=0, value=10)
         expiration_days = st.sidebar.slider("Días para Alerta de Vencimiento", 7, 90, 30)
 
@@ -355,12 +330,12 @@ else:
                                     "Cantidad Vendida": [cantidad_vendida],
                                     "Precio Unitario": [producto["Precio"]],
                                     "Total": [total_venta],
-                                    "Usuario": [st.session_state.username if 'username' in st.session_state else 'admin']
+                                    "Usuario": [st.session_state.username]
                                 })
                                 ventas_csv = pd.concat([ventas_csv, nueva_venta], ignore_index=True)
                                 guardar_ventas(ventas_csv)
 
-                                registrar_cambio("Venta", id_venta, st.session_state.username if 'username' in st.session_state else 'admin')
+                                registrar_cambio("Venta", id_venta, st.session_state.username)
                                 st.success(f"Venta registrada: {cantidad_vendida} de '{producto['Producto']}' por ${total_venta:.2f}")
                                 inventario = cargar_inventario()
                             else:
@@ -403,7 +378,7 @@ else:
                         if st.button("Confirmar Carga"):
                             inventario = nuevo_inventario.copy()
                             guardar_inventario(inventario)
-                            registrar_cambio("Cargar CSV", "Todos", st.session_state.username if 'username' in st.session_state else 'admin')
+                            registrar_cambio("Cargar CSV", "Todos", st.session_state.username)
                             st.success("Inventario actualizado desde el CSV con éxito!")
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {str(e)}")
@@ -433,7 +408,7 @@ else:
                             inventario = pd.concat([inventario, nuevos_productos], ignore_index=True)
                             guardar_inventario(inventario)
                             for id_prod in nuevos_productos["ID"]:
-                                registrar_cambio("Agregar", id_prod, st.session_state.username if 'username' in st.session_state else 'admin')
+                                registrar_cambio("Agregar", id_prod, st.session_state.username)
                             st.success(f"{len(nuevos_productos)} producto(s) agregado(s) con éxito!")
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {str(e)}")
@@ -471,7 +446,7 @@ else:
                     inventario.loc[inventario["ID"] == id_editar, ["Producto", "Categoría", "Cantidad", "Precio", "Proveedor", "Última Actualización"]] = \
                         [nombre, categoria, cantidad, round(precio, 2), proveedor, datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
                     guardar_inventario(inventario)
-                    registrar_cambio("Editar", id_editar, st.session_state.username if 'username' in st.session_state else 'admin')
+                    registrar_cambio("Editar", id_editar, st.session_state.username)
                     st.success(f"Producto con ID '{id_editar}' actualizado con éxito!")
         elif id_editar:
             st.error("ID no encontrado en el inventario.")
@@ -486,7 +461,7 @@ else:
             if confirmar:
                 inventario = inventario[inventario["ID"] != id_eliminar]
                 guardar_inventario(inventario)
-                registrar_cambio("Eliminar", id_eliminar, st.session_state.username if 'username' in st.session_state else 'admin')
+                registrar_cambio("Eliminar", id_eliminar, st.session_state.username)
                 st.success(f"Producto con ID '{id_eliminar}' eliminado con éxito!")
         elif id_eliminar:
             st.error("ID no encontrado en el inventario.")
@@ -534,7 +509,7 @@ else:
             st.download_button(
                 label="Descargar Reporte como PDF",
                 data=buffer.getvalue(),
-                file_name=f"reporte_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"reporte_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf"
             )
 
@@ -546,55 +521,23 @@ else:
         else:
             st.info("No hay historial de cambios registrado aún.")
 
-    elif menu == "Análisis de Demanda" and data_db is not None:
-        st.subheader("Análisis de Demanda")
-        preprocessed_data = preprocess_data(data_db)
-        products = list(preprocessed_data.keys())
+    elif menu == "Análisis de Stock" and data_db is not None:
+        st.subheader("Análisis de Stock")
+        products = data_db["Producto"].unique()
         selected_product = st.selectbox("Selecciona un Producto", products)
 
-        product_data = preprocessed_data[selected_product]
-
-        st.write("### Pronóstico de Demanda")
-        with st.expander("¿Qué significa esto?"):
-            st.write("Predice ventas futuras con un modelo estadístico (ARIMA). Línea azul: pasado; rojo punteado: futuro; sombra: intervalo de confianza.")
-        
-        forecast, conf_int, error = forecast_demand(preprocessed_data, selected_product, forecast_days)
-        if forecast is not None:
-            if product_data.empty or pd.isna(product_data['Fecha'].max()):
-                st.warning(f"No hay datos históricos válidos para {selected_product}.")
-            else:
-                forecast_dates = pd.date_range(start=product_data['Fecha'].max() + pd.Timedelta(days=1), periods=forecast_days, freq='D')
-                forecast_df = pd.DataFrame({'Fecha': forecast_dates, 'Pronóstico': forecast, 'Lower_CI': conf_int[:, 0], 'Upper_CI': conf_int[:, 1]})
-
-                fig, ax = plt.subplots(figsize=(12, 6))
-                ax.plot(product_data['Fecha'], product_data['Ventas'], label='Ventas Históricas', color='blue')
-                ax.plot(forecast_df['Fecha'], forecast_df['Pronóstico'], label='Pronóstico', color='red', linestyle='--')
-                ax.fill_between(forecast_df['Fecha'], forecast_df['Lower_CI'], forecast_df['Upper_CI'], color='red', alpha=0.1, label='Intervalo de Confianza')
-                ax.legend()
-                ax.set_title(f"Pronóstico de Demanda para {selected_product}")
-                ax.set_xlabel("Fecha")
-                ax.set_ylabel("Ventas")
-                st.pyplot(fig)
-        else:
-            st.warning(error)
+        product_data = data_db[data_db["Producto"] == selected_product]
 
         st.write("### Gestión de Inventario")
         with st.expander("¿Qué significa esto?"):
-            st.write("Muestra stock actual, demanda futura, stock esperado y cuánto reabastecer.")
+            st.write("Muestra el stock actual basado en los datos históricos.")
         
         current_stock = product_data['Stock'].iloc[-1] if not product_data.empty else 0
-        predicted_demand = forecast.sum() if forecast is not None else 0
-        predicted_stock = current_stock - predicted_demand
-        restock_amount = suggest_restock(current_stock, predicted_demand, stock_threshold)
-
-        col1, col2, col3, col4 = st.columns(4)
+        col1 = st.columns(1)[0]
         col1.metric("Stock Actual", int(current_stock))
-        col2.metric("Demanda Pronosticada", int(predicted_demand))
-        col3.metric("Stock Esperado", int(predicted_stock))
-        col4.metric("Recomendación de Reabastecimiento", int(restock_amount))
 
-        if predicted_stock < stock_threshold:
-            st.warning(f"¡Alerta! Stock esperado ({int(predicted_stock)}) por debajo del umbral ({stock_threshold}). Reabastece {int(restock_amount)} unidades.")
+        if current_stock < stock_threshold:
+            st.warning(f"¡Alerta! Stock actual ({int(current_stock)}) por debajo del umbral ({stock_threshold}).")
 
         st.write("### Control de Vencimientos")
         with st.expander("¿Qué significa esto?"):

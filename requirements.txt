@@ -1,12 +1,5 @@
 streamlit
 pandas
-numpy
-pmdarima
-matplotlib
 bcrypt
 plotly
 reportlab
-scipy
-scikit-learn
-statsmodels
-Cython
